@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Megapong</title>
+<style>
+  :root {
+    --ink:#1d1a17; --ink2:#2a2622; --cream:#ece2cf; --sand:#d8c3a5; --ochre:#c9a66b; --umber:#7a5c3e;
+    --slate:#5b6f82; --deep:#34424f; --olive:#7d7f5a; --red:#c8452f; --teal:#2f7f86; --gold:#e0b03c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--ink); color: var(--cream); overflow: hidden;
+    font-family: Rockwell, "Roboto Slab", Georgia, "Times New Roman", serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  #hud { display: flex; align-items: center; gap: 6px 18px; padding: 8px 14px; flex-wrap: wrap;
+    background: linear-gradient(100deg, var(--ink2) 0 22%, #332d27 22% 55%, var(--ink2) 55% 81%, #3a332b 81%);
+    border-bottom: 3px solid var(--ink); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: var(--sand); }
+  #hud .title { font-weight: 700; letter-spacing: 4px; color: var(--ink); background: var(--gold); padding: 2px 10px;
+    clip-path: polygon(0 12%, 100% 0, 96% 100%, 4% 88%); }
+  #hud b { color: var(--cream); font-size: 18px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  #hud .grow { margin-right: auto; }
+  #hud b.bad { color: #ff8a70; } #hud b.good { color: #9fd8c4; }
+  #mute { background: none; border: 2px solid var(--umber); color: var(--sand); font: inherit; padding: 1px 8px; cursor: pointer; }
+
+  #stage { position: relative; flex: 1; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(20,18,16,.78); padding: 14px; overflow-y: auto; }
+  #overlay.hidden { display: none; }
+  .panel { position: relative; width: 100%; max-width: 760px; margin: auto; padding: 26px 30px 24px; color: var(--ink); text-align: center;
+    background:
+      linear-gradient(104deg, transparent 0 63%, rgba(91,111,130,.34) 63% 79%, transparent 79%),
+      linear-gradient(68deg, rgba(201,166,107,.75) 0 17%, transparent 17% 100%),
+      linear-gradient(170deg, var(--cream) 0 46%, var(--sand) 46% 100%);
+    clip-path: polygon(1.2% 2.5%, 98.5% 0, 100% 97%, 2.5% 100%); }
+  .panel.narrow { max-width: 500px; }
+  h1 { margin: 0; font-size: 44px; letter-spacing: 8px; line-height: 1; }
+  h1 span { display: inline-block; }
+  h1 span:nth-child(odd) { color: var(--red); transform: translateY(3px) rotate(-4deg); }
+  h1 span:nth-child(3n) { color: var(--deep); transform: translateY(-3px) rotate(5deg); }
+  h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: 4px; text-transform: uppercase; }
+  .kicker { font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--umber); margin: 0 0 6px; }
+  .panel p { margin: 8px 0; line-height: 1.45; font-size: 15px; }
+  .boss { display: inline-block; background: var(--red); color: var(--cream); padding: 4px 14px; margin: 6px 0;
+    letter-spacing: 3px; text-transform: uppercase; font-weight: 700; clip-path: polygon(0 0, 97% 8%, 100% 100%, 3% 90%); }
+  .mission { font-size: 19px; font-weight: 700; margin: 10px 0 2px !important; }
+  .dim { color: #6b5a47; font-size: 13px !important; }
+  .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+  button.btn { font: inherit; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border: 0;
+    padding: 11px 24px; font-size: 15px; background: var(--ink); color: var(--cream);
+    clip-path: polygon(3% 0, 100% 7%, 97% 100%, 0 91%); }
+  button.btn.primary { background: var(--red); }
+  button.btn:disabled { opacity: .4; cursor: default; }
+  button.btn:hover:not(:disabled) { filter: brightness(1.15); }
+  kbd { border: 2px solid var(--umber); padding: 0 5px; font-family: inherit; font-size: 12px; }
+
+  .payout { list-style: none; padding: 0; margin: 8px auto; max-width: 330px; text-align: left; font-size: 14px; }
+  .payout li { display: flex; justify-content: space-between; border-bottom: 1px dashed rgba(29,26,23,.35); padding: 2px 0; }
+  .payout li.total { font-weight: 700; border-bottom: 0; font-size: 16px; }
+  .purse { display: inline-block; background: var(--gold); padding: 3px 16px; font-weight: 700; font-size: 20px;
+    clip-path: polygon(4% 0, 100% 10%, 95% 100%, 0 86%); }
+
+  .cards { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 14px 0 6px; }
+  .card { position: relative; width: 200px; min-height: 236px; padding: 0 12px 12px; border: 0; cursor: pointer; font: inherit; color: var(--ink);
+    text-align: center; overflow: hidden; background: var(--cream);
+    clip-path: polygon(2% 0, 100% 3%, 97% 100%, 0 96%); filter: drop-shadow(0 0 0 var(--ink)); transition: transform .12s; }
+  .card:nth-child(1) { transform: rotate(-2deg); } .card:nth-child(3) { transform: rotate(2deg); }
+  .card:hover:not(:disabled) { transform: translateY(-5px) rotate(0); }
+  .card:disabled { cursor: default; filter: saturate(.35) brightness(.86); }
+  .card.sold { background: var(--ink2); color: var(--umber); display: flex; align-items: center; justify-content: center;
+    letter-spacing: 6px; font-weight: 700; }
+  .card svg { display: block; width: calc(100% + 24px); height: 92px; margin: 0 -12px 8px; }
+  .card .rar { position: absolute; top: 6px; left: 8px; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    background: var(--ink); color: var(--cream); padding: 1px 6px; }
+  .card.r-uncommon .rar { background: var(--teal); } .card.r-rare .rar { background: var(--red); }
+  .card .name { display: block; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; }
+  .card .desc { display: block; font-size: 13px; line-height: 1.35; margin: 6px 0 10px; min-height: 52px; }
+  .card .price { display: inline-block; background: var(--gold); padding: 1px 12px; font-weight: 700;
+    clip-path: polygon(6% 0, 100% 12%, 94% 100%, 0 84%); }
+  .card .own { display: block; font-size: 11px; color: #6b5a47; margin-top: 5px; letter-spacing: 1px; }
+
+  .owned { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin: 10px 0 0; }
+  .chip { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; background: var(--deep); color: var(--cream); padding: 2px 8px;
+    clip-path: polygon(3% 0, 100% 10%, 97% 100%, 0 88%); }
+  .chip:nth-child(3n) { background: var(--umber); } .chip:nth-child(3n+1) { background: var(--olive); }
+
+  @media (max-width: 520px) {
+    h1 { font-size: 30px; letter-spacing: 4px; } .panel { padding: 20px 16px; }
+    .card { width: 100%; min-height: 0; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span class="title">MEGAPONG</span>
+    <span id="hLevel"></span>
+    <span class="grow" id="hMission"></span>
+    <span id="hExtra"></span>
+    <span id="hMoney"></span>
+    <button id="mute" title="Toggle sound (M)">sound on</button>
+  </div>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="overlay"></div>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
