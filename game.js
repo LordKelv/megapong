@@ -102,18 +102,18 @@
     const tm = Math.pow(0.92, own('deadline')), fm = Math.pow(0.88, own('forgive'));
     const m = { lv, kind, boss };
     if (kind === 'hold') {
-      m.T = Math.min(14 + 2 * lv, 40) * tm;
-      m.K = Math.max(1, Math.round(Math.min(4 + 2 * lv, 60) * fm));
+      m.T = Math.min(10 + 2 * lv, 40) * tm;
+      m.K = Math.max(1, Math.round(Math.min(lv + 0.2 * lv * lv, 60) * fm));
       m.title = `Keep ${m.K} boards alive for ${m.T.toFixed(0)} seconds`;
     } else if (kind === 'rally') {
       m.T = 30 + lv;
-      m.R = Math.round((110 + 40 * lv) * fm);
+      m.R = Math.round((40 + 30 * lv) * fm);
       m.K = 1;
       m.title = `Make ${m.R} returns within ${m.T} seconds`;
     } else {
-      m.T = Math.min(14 + 2 * lv, 36) * tm;
+      m.T = Math.min(10 + 2 * lv, 36) * tm;
       m.G = 10;
-      m.K = Math.max(1, Math.round(Math.min(2 + lv / 3, 7) * fm));
+      m.K = Math.max(1, Math.round(Math.min(lv / 3, 6) * fm));
       m.title = `Keep ${m.K} of the ${m.G} gilded boards alive for ${m.T.toFixed(0)} seconds`;
     }
     return m;
@@ -166,7 +166,7 @@
 
   function gridDims() {
     const k = L.layoutN;
-    L.lcols = clamp(Math.ceil(Math.sqrt(k * (W || 16) / (H || 9))), 1, Math.max(1, k));
+    L.lcols = Math.max(1, Math.ceil(Math.sqrt(k)));
     L.lrows = Math.max(1, Math.ceil(k / L.lcols));
   }
 
