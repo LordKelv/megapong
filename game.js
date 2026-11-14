@@ -164,14 +164,19 @@
     relayout();
   }
 
+  function gridDims() {
+    const k = L.layoutN;
+    L.lcols = clamp(Math.ceil(Math.sqrt(k * (W || 16) / (H || 9))), 1, Math.max(1, k));
+    L.lrows = Math.max(1, Math.ceil(k / L.lcols));
+  }
+
   // Consolidate: drop the dead boards and pack the survivors into a smaller,
   // larger-celled grid. The renderer eases each board to its new place.
   function relayout() {
     let k = 0;
     for (let i = 0; i < L.count; i++) { if (L.alive[i]) L.slot[i] = k++; else L.gone[i] = 1; }
     L.layoutN = k;
-    L.lcols = Math.max(1, Math.ceil(Math.sqrt(k * 1.25)));
-    L.lrows = Math.max(1, Math.ceil(k / L.lcols));
+    gridDims();
     L.relayAt = 0;
   }
 
@@ -427,7 +432,7 @@
       <div class="row"><button class="btn primary" data-act="run" data-primary>New run</button>
         <button class="btn" data-act="classic">Classic</button></div>
       <p class="dim" style="margin-top:14px">${best ? `Best level cleared: ${best}` : 'No runs yet'}${cb ? ` · Classic best: ${cb.toFixed(2)}s` : ''}</p>
-      <p class="dim"><kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd>, or move the mouse / drag.
+      <p class="dim"><kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd>, or move the mouse / drag.
         <kbd>Space</kbd> confirms, and fires Long Exposure in play.</p>
     </div>`);
   }
@@ -512,7 +517,7 @@
     const pad = 8, gap = L.layoutN > 150 ? 3 : L.layoutN > 30 ? 5 : 10;
     let cw = (W - pad * 2 - gap * (L.lcols - 1)) / L.lcols;
     let ch = (H - pad * 2 - gap * (L.lrows - 1)) / L.lrows;
-    if (cw > ch * 1.9) cw = ch * 1.9; else if (ch > cw * 0.9) ch = cw * 0.9;
+    if (cw > ch * 1.25) cw = ch * 1.25; else if (ch > cw * 1.3) ch = cw * 1.3;
     const ox = (W - (cw * L.lcols + gap * (L.lcols - 1))) / 2, oy = (H - (ch * L.lrows + gap * (L.lrows - 1))) / 2;
     return [ox + (k % L.lcols) * (cw + gap), oy + Math.floor(k / L.lcols) * (ch + gap), cw, ch];
   }
@@ -534,17 +539,21 @@
     poly(g, q); g.stroke();
   }
 
+  // Boards are drawn rotated a quarter turn from the simulation: the simulated
+  // x axis is depth (0 = the paddle end, drawn at the bottom) and the simulated
+  // y axis runs left to right on screen.
   function paddleShape(g, x, y, w, h, py, half, light, dark) {
-    const x0 = x + PADDLE_X * w, pw = Math.max(2, PADDLE_W * w), y0 = y + (py - half) * h, ph = half * 2 * h;
-    poly(g, [[x0, y0 + ph * 0.05], [x0 + pw, y0], [x0 + pw, y0 + ph], [x0, y0 + ph * 0.95]], light);
-    poly(g, [[x0, y0 + ph * 0.05], [x0 + pw * 0.45, y0 + ph * 0.03], [x0 + pw * 0.45, y0 + ph * 0.97], [x0, y0 + ph * 0.95]], dark);
+    const x0 = x + (py - half) * w, pl = half * 2 * w, ph = Math.max(2, PADDLE_W * h);
+    const yb = y + h - PADDLE_X * h, yt = yb - ph;
+    poly(g, [[x0 + pl * 0.05, yb], [x0, yt], [x0 + pl, yt], [x0 + pl * 0.95, yb]], light);
+    poly(g, [[x0 + pl * 0.05, yb], [x0 + pl * 0.03, yb - ph * 0.45], [x0 + pl * 0.97, yb - ph * 0.45], [x0 + pl * 0.95, yb]], dark);
   }
 
   function drawLive(i, x, y, w, h) {
     if (L.ghostHalf) paddleShape(ctx, x, y, w, h, 1 - paddleY, L.ghostHalf, 'rgba(120,205,200,.8)', 'rgba(47,127,134,.8)');
     paddleShape(ctx, x, y, w, h, paddleY, L.half, '#f3e8d2', '#34424f');
     const s = Math.max(5, BALL_R * 2.7 * Math.min(w, h));
-    ctx.drawImage(cube, x + L.bx[i] * w - s / 2, y + L.by[i] * h - s / 2, s, s);
+    ctx.drawImage(cube, x + L.by[i] * w - s / 2, y + (1 - L.bx[i]) * h - s / 2, s, s);
   }
 
   function resize() {
@@ -552,6 +561,7 @@
     W = stage.clientWidth; H = stage.clientHeight;
     for (const c of [canvas, bgLayer]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     paintBackground();
+    if (L) gridDims();
   }
 
   function draw() {
@@ -574,7 +584,7 @@
           poly(ctx, [[x, y + h * 0.04], [x + w, y], [x + w, y + h * 0.96], [x, y + h]], 'rgba(20,18,16,.97)');
         }
         const sAge = clock - L.saveAt[i];
-        if (sAge < 0.4) poly(ctx, [[x, y], [x + w * 0.35, y], [x, y + h]], `rgba(120,205,200,${(0.85 * (1 - sAge / 0.4)).toFixed(3)})`);
+        if (sAge < 0.4) poly(ctx, [[x, y + h], [x + w, y + h], [x, y + h * 0.65]], `rgba(120,205,200,${(0.85 * (1 - sAge / 0.4)).toFixed(3)})`);
       } else {
         const age = clock - L.deathAt[i];
         if (age < 0.5) {
@@ -659,7 +669,7 @@
     requestAnimationFrame(frame);
   }
 
-  const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' };
+  const KEYMAP = { ArrowLeft: 'up', KeyA: 'up', ArrowRight: 'down', KeyD: 'down' };  // 'up' = toward 0 = screen left
   window.addEventListener('keydown', (e) => {
     const k = KEYMAP[e.code];
     if (k) { keys[k] = true; e.preventDefault(); return; }
@@ -678,7 +688,7 @@
 
   function pointer(e) {
     const r = canvas.getBoundingClientRect();
-    const y = (e.clientY - r.top) / r.height;
+    const y = (e.clientX - r.left) / r.width;
     targetY = L && L.mirror ? 1 - y : y;
   }
   canvas.addEventListener('pointermove', pointer);
