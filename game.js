@@ -131,6 +131,8 @@
       vx: new Float32Array(count), vy: new Float32Array(count),
       alive: new Uint8Array(count).fill(1), gold: new Uint8Array(count),
       deathAt: new Float32Array(count).fill(-10), saveAt: new Float32Array(count).fill(-10),
+      slot: new Int16Array(count), gone: new Uint8Array(count), layoutN: 0, lcols: 1, lrows: 1, relayAt: 0, snap: true,
+      rx: new Float32Array(count), ry: new Float32Array(count), rw: new Float32Array(count), rh: new Float32Array(count),
       aliveCount: count, goldAlive: 0, returns: 0, t: 0, bonus: 0, finalBase: 1,
       half: Math.min(0.42, BASE_HALF * (1 + 0.14 * own('wide')) * (boss === 'shrink' ? 0.62 : 1)),
       pspeed: BASE_PSPEED * (1 + 0.2 * own('quick')),
@@ -159,7 +161,18 @@
     state = 'countdown';
     overlay.classList.add('hidden');
     ensureAudio();
-    paintBoards();
+    relayout();
+  }
+
+  // Consolidate: drop the dead boards and pack the survivors into a smaller,
+  // larger-celled grid. The renderer eases each board to its new place.
+  function relayout() {
+    let k = 0;
+    for (let i = 0; i < L.count; i++) { if (L.alive[i]) L.slot[i] = k++; else L.gone[i] = 1; }
+    L.layoutN = k;
+    L.lcols = Math.max(1, Math.ceil(Math.sqrt(k * 1.25)));
+    L.lrows = Math.max(1, Math.ceil(k / L.lcols));
+    L.relayAt = 0;
   }
 
   function speedMul() {
@@ -180,7 +193,9 @@
   function kill(i) {
     L.alive[i] = 0; L.deathAt[i] = clock; L.aliveCount--;
     if (L.gold[i]) L.goldAlive--;
-    paintBoard(i);
+    // Once enough of the current grid has gone dark, schedule a consolidation
+    // (slightly delayed so the death flash is still seen).
+    if (!L.relayAt && L.aliveCount > 0 && L.aliveCount <= L.layoutN * 0.6) L.relayAt = clock + 0.45;
     blip(160 + 700 * (L.aliveCount / L.count), 0.07, 0.035);
   }
 
@@ -262,6 +277,7 @@
 
   function update(dt) {
     clock += dt;
+    if (L && L.relayAt && clock >= L.relayAt && (state === 'play' || state === 'final')) relayout();
     if (state === 'countdown') {
       movePaddle(dt);
       countdown -= dt;
@@ -448,8 +464,8 @@
   const BG_TONES = ['#2b2621', '#332c25', '#27292b', '#2f2a22', '#24211d', '#2c3033', '#3a3027'];
 
   let W = 0, H = 0, dpr = 1;
-  const bgLayer = document.createElement('canvas'), boardLayer = document.createElement('canvas');
-  const bgCtx = bgLayer.getContext('2d'), boardCtx = boardLayer.getContext('2d');
+  const bgLayer = document.createElement('canvas');
+  const bgCtx = bgLayer.getContext('2d');
   const cube = document.createElement('canvas');
 
   function poly(g, pts, fill) {
@@ -492,11 +508,13 @@
     }
   }
 
-  function cellRect(i) {
-    const pad = 8, gap = L.count > 150 ? 3 : 5;
-    const cw = (W - pad * 2 - gap * (L.cols - 1)) / L.cols;
-    const ch = (H - pad * 2 - gap * (L.rows - 1)) / L.rows;
-    return [pad + (i % L.cols) * (cw + gap), pad + Math.floor(i / L.cols) * (ch + gap), cw, ch];
+  function slotRect(k) {
+    const pad = 8, gap = L.layoutN > 150 ? 3 : L.layoutN > 30 ? 5 : 10;
+    let cw = (W - pad * 2 - gap * (L.lcols - 1)) / L.lcols;
+    let ch = (H - pad * 2 - gap * (L.lrows - 1)) / L.lrows;
+    if (cw > ch * 1.9) cw = ch * 1.9; else if (ch > cw * 0.9) ch = cw * 0.9;
+    const ox = (W - (cw * L.lcols + gap * (L.lcols - 1))) / 2, oy = (H - (ch * L.lrows + gap * (L.lrows - 1))) / 2;
+    return [ox + (k % L.lcols) * (cw + gap), oy + Math.floor(k / L.lcols) * (ch + gap), cw, ch];
   }
 
   // A board is a slightly skewed plane split into two facets.
@@ -511,21 +529,9 @@
       g.strokeStyle = '#18150f'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(q[0][0], q[0][1]); g.lineTo(bot[0], bot[1]); g.lineTo(q[1][0], q[1][1]); g.stroke();
     }
-    g.lineWidth = Math.max(1, Math.min(w, h) * 0.035); g.lineJoin = 'round';
+    g.lineWidth = clamp(Math.min(w, h) * 0.035, 1, 6); g.lineJoin = 'round';
     g.strokeStyle = L.gold[i] && L.alive[i] ? '#f6d778' : INK;
     poly(g, q); g.stroke();
-  }
-
-  function paintBoard(i) {
-    const [x, y, w, h] = cellRect(i);
-    boardCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    boardCtx.clearRect(x - 2, y - 2, w + 4, h + 4);
-    boardFacets(boardCtx, i, x, y, w, h);
-  }
-  function paintBoards() {
-    boardCtx.setTransform(1, 0, 0, 1, 0, 0);
-    boardCtx.clearRect(0, 0, boardLayer.width, boardLayer.height);
-    if (L) for (let i = 0; i < L.count; i++) paintBoard(i);
   }
 
   function paddleShape(g, x, y, w, h, py, half, light, dark) {
@@ -544,9 +550,8 @@
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = stage.clientWidth; H = stage.clientHeight;
-    for (const c of [canvas, bgLayer, boardLayer]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    for (const c of [canvas, bgLayer]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     paintBackground();
-    paintBoards();
   }
 
   function draw() {
@@ -555,27 +560,14 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!L) return;
 
-    if (M.kind === 'classic' && (state === 'final' || (state === 'over' && L.bonus > 0))) {
-      // One board left: blow it up so it is actually playable.
-      let w = W - 16, h = H - 16 - 28;
-      if (w / h > 1.7) w = h * 1.7; else h = w / 1.7;
-      const x = (W - w) / 2, y = (H - h) / 2 + 14;
-      let last = 0;
-      for (let i = 0; i < L.count; i++) if (L.alive[i]) { last = i; break; }
-      boardFacets(ctx, last, x, y, w, h);
-      if (L.aliveCount > 0) drawLive(last, x, y, w, h);
-      ctx.fillStyle = '#d8c3a5'; ctx.textAlign = 'center';
-      ctx.font = 'bold 14px Rockwell, Georgia, serif';
-      ctx.fillText(`LAST BOARD  ·  SPEED ×${speedMul().toFixed(1)}`, W / 2, y - 10);
-      return;
-    }
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(boardLayer, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ease = L.snap ? 1 : Math.min(1, frameDt * 7);
     const darkPhase = L.blackout ? Math.floor(L.t / 2.2) % 2 : -1;
     for (let i = 0; i < L.count; i++) {
-      const [x, y, w, h] = cellRect(i);
+      if (L.gone[i]) continue;
+      const t = slotRect(L.slot[i]);
+      const x = L.rx[i] += (t[0] - L.rx[i]) * ease, y = L.ry[i] += (t[1] - L.ry[i]) * ease;
+      const w = L.rw[i] += (t[2] - L.rw[i]) * ease, h = L.rh[i] += (t[3] - L.rh[i]) * ease;
+      boardFacets(ctx, i, x, y, w, h);
       if (L.alive[i]) {
         drawLive(i, x, y, w, h);
         if (darkPhase >= 0 && state === 'play' && ((i % L.cols) + Math.floor(i / L.cols)) % 2 === darkPhase) {
@@ -592,6 +584,7 @@
         }
       }
     }
+    L.snap = false;
     if (L.slowT > 0) { ctx.fillStyle = 'rgba(47,127,134,.14)'; ctx.fillRect(0, 0, W, H); }
 
     if (state === 'countdown') {
@@ -656,10 +649,10 @@
   }
 
   // ---------------------------------------------------------------- loop & input
-  let lastTs = 0;
+  let lastTs = 0, frameDt = 0;
   function frame(ts) {
     const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
-    lastTs = ts;
+    lastTs = ts; frameDt = dt;
     update(dt);
     hud();
     draw();
